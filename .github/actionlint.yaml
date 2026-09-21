@@ -1,0 +1,9 @@
+# actionlint 1.7.12 is the newest release and its type model for the `job` context predates
+# job.workflow_ref / job.workflow_sha / job.workflow_repository, which GitHub added in April 2026
+# for exactly the case import.yml needs: a reusable workflow finding the ref it was called at.
+# (github.workflow_sha is the CALLER's, which is the whole problem.) Drop this file when a release
+# knows the properties.
+paths:
+  .github/workflows/import.yml:
+    ignore:
+      - 'property "workflow_sha" is not defined in object type'

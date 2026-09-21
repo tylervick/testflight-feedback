@@ -1,0 +1,11 @@
+# Dev tooling for testflight-feedback.
+#
+# Pinned exactly rather than "latest" so `actionlint`/`zizmor` mean the same thing here, on a
+# laptop, and in CI. The versions match graphghan's mise.toml, which is where these scripts and
+# workflows came from.
+#
+# In a fresh checkout:
+#   mise trust && mise install
+[tools]
+actionlint = "1.7.12"
+zizmor = "1.29.0"

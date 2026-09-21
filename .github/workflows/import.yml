@@ -1,0 +1,100 @@
+name: Import TestFlight feedback
+
+# Reusable: an app repository calls this and gets one issue per TestFlight submission, opened in
+# ITS repository. The caller supplies the bundle id and the App Store Connect credentials.
+#
+#   jobs:
+#     import:
+#       uses: tylervick/testflight-feedback/.github/workflows/import.yml@v1
+#       with: {bundle-id: com.example.app}
+#       secrets: inherit
+on:
+  workflow_call:
+    inputs:
+      bundle-id:
+        description: The app's bundle id in App Store Connect
+        type: string
+        required: true
+      dry-run:
+        description: List what would be created without opening issues or uploading screenshots
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      ASC_PRIVATE_KEY:
+        description: The .p8 App Store Connect key, base64 encoded
+        required: true
+      ASC_KEY_ID:
+        required: true
+      ASC_ISSUER_ID:
+        required: true
+
+permissions: {}
+
+jobs:
+  import:
+    name: Import feedback as issues
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # issues: write for gh issue create and gh label create; contents: write for gh release
+    # create/upload, which is where the screenshots live. Both apply to the CALLING repository,
+    # and are capped by what the caller granted.
+    permissions:
+      issues: write
+      contents: write
+    steps:
+      # WHY THE REF IS DERIVED, NOT AN INPUT: the caller pins a version in its `uses:` line, and the
+      # scripts must be the ones that shipped with THAT version of this workflow.
+      #
+      # It must be `job.workflow_sha`, NOT `github.workflow_sha`. The github context in a called
+      # workflow belongs to the CALLER -- that is what makes github.repository the calling
+      # repository, which this relies on elsewhere -- so github.workflow_ref/sha describe the
+      # caller's workflow file. Only the job context describes the file that defines this job.
+      # Getting this wrong checks out this repository's default branch instead of the pinned
+      # commit, which fails open: the caller's sha pin would silently stop meaning anything.
+      - name: Refuse to run unpinned
+        env:
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          [ -n "$WORKFLOW_SHA" ] || {
+              echo "error: job.workflow_sha is empty; refusing to fall back to a default branch" >&2
+              exit 1
+          }
+
+      - name: Check out the importer at the version the caller pinned
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: tylervick/testflight-feedback
+          ref: ${{ job.workflow_sha }}
+          persist-credentials: false
+
+      # No set -x: a decoded .p8 is multi-line PEM and GitHub's masking needs a single-line match.
+      - name: Install the App Store Connect key
+        env:
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          umask 077
+          printf '%s' "$ASC_PRIVATE_KEY" | /usr/bin/base64 --decode > "$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Import feedback
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          # github.repository is the CALLING repository in a called workflow, which is where the
+          # issues belong; GH_TOKEN is likewise scoped to the caller.
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUNDLE_ID: ${{ inputs.bundle-id }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            scripts/testflight-feedback.sh --bundle-id "$BUNDLE_ID" --dry-run
+          else
+            scripts/testflight-feedback.sh --bundle-id "$BUNDLE_ID"
+          fi
+
+      - name: Delete the decoded key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8

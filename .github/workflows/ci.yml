@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push: {branches: [main]}
+  pull_request:
+
+permissions: {}
+
+jobs:
+  scripts:
+    name: Shell tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: {persist-credentials: false}
+      - name: Run the hermetic script tests
+        run: |
+          for t in scripts/test-*.sh; do
+            echo "== $t"
+            "$t"
+          done
+
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with: {cache: true}
+
+      - name: Lint the workflows
+        run: |
+          actionlint
+          zizmor .github/workflows/
